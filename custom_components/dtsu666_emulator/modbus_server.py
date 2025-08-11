@@ -43,6 +43,8 @@ class DTSU666ModbusServer:
         self._update_task: asyncio.Task | None = None
         self._data_block: ModbusSequentialDataBlock | None = None
         self._running = False
+        self._current_values: dict[str, float] = {}
+        self._raw_register_values: dict[str, int] = {}
 
     async def start(self) -> bool:
         """Start the Modbus server."""
@@ -169,6 +171,10 @@ class DTSU666ModbusServer:
                 # Write to register
                 self._data_block.setValues(address, [scaled_value])
                 
+                # Store current values for sensors
+                self._current_values[register_name] = value
+                self._raw_register_values[register_name] = scaled_value
+                
                 _LOGGER.debug(
                     "Updated register %s (0x%04X): %s -> %d (scale: %s)",
                     register_name,
@@ -218,3 +224,16 @@ class DTSU666ModbusServer:
                     derived["power_factor_total"] = p / s
 
         return derived
+
+    def get_register_value(self, register_name: str) -> float | None:
+        """Get the current scaled value for a register."""
+        return self._current_values.get(register_name)
+
+    def get_raw_register_value(self, register_name: str) -> int | None:
+        """Get the raw register value (as stored in Modbus)."""
+        return self._raw_register_values.get(register_name)
+
+    @property
+    def is_running(self) -> bool:
+        """Check if the server is running."""
+        return self._running

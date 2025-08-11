@@ -12,6 +12,7 @@ A Home Assistant HACS integration that emulates a CHINT DTSU666 smart meter for 
 - **Protocol Compatibility**: Implements the specific register layout expected by Huawei Sun2000 inverters
 - **Configuration UI**: Easy setup through Home Assistant's configuration flow
 - **Real-time Updates**: Continuously updates Modbus registers with current HA sensor values
+- **Diagnostic Sensors**: Exposes actual register values and server status for monitoring
 
 ## Installation
 
@@ -70,6 +71,26 @@ The integration emulates these DTSU666 registers:
    - **IP Address**: Home Assistant IP
    - **Port**: 5020 (or your configured port)
    - **Slave ID**: 11 (or your configured slave ID)
+
+## Diagnostic Sensors
+
+The integration automatically creates diagnostic sensors to monitor register values:
+
+### **Register Sensors**
+For each mapped entity, you'll get a sensor showing:
+- **Current Value**: The actual value being sent to the inverter
+- **Register Address**: Modbus register address (hex)
+- **Scale Factor**: Applied scaling factor
+- **Source Entity**: The HA entity providing the data
+- **Raw Value**: Unscaled integer value in the register
+
+### **Server Status Sensor** 
+Shows server status with attributes:
+- **Status**: running/stopped
+- **Network Settings**: host, port, slave ID
+- **Configuration**: update interval, mapped entities count
+
+These sensors help verify the integration is working correctly and troubleshoot any data issues.
 
 ## Troubleshooting
 
