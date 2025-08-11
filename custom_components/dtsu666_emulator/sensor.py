@@ -34,39 +34,52 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up DTSU666 Emulator sensor entities."""
-    server: DTSU666ModbusServer = hass.data[DOMAIN][config_entry.entry_id]
-    entity_mappings = config_entry.data.get("entity_mappings", {})
-    
-    # Create diagnostic sensors for ALL registers (mapped + defaults)
-    sensors = []
-    for register_name in REGISTER_MAP.keys():
-        source_entity = entity_mappings.get(register_name, "default")
+    try:
+        _LOGGER.info("Setting up DTSU666 sensor entities for entry %s", config_entry.entry_id)
+        
+        server: DTSU666ModbusServer = hass.data[DOMAIN][config_entry.entry_id]
+        entity_mappings = config_entry.data.get("entity_mappings", {})
+        
+        _LOGGER.info("Found %d entity mappings: %s", len(entity_mappings), list(entity_mappings.keys()))
+        
+        # Create diagnostic sensors for ALL registers (mapped + defaults)
+        sensors = []
+        for register_name in REGISTER_MAP.keys():
+            try:
+                source_entity = entity_mappings.get(register_name, "default")
+                sensor = DTSU666RegisterSensor(
+                    server=server,
+                    config_entry=config_entry,
+                    register_name=register_name,
+                    source_entity=source_entity,
+                )
+                sensors.append(sensor)
+            except Exception as ex:
+                _LOGGER.error("Failed to create sensor for register %s: %s", register_name, ex, exc_info=True)
+        
+        # Add server status sensor
         sensors.append(
-            DTSU666RegisterSensor(
+            DTSU666ServerStatusSensor(
                 server=server,
                 config_entry=config_entry,
-                register_name=register_name,
-                source_entity=source_entity,
             )
         )
-    
-    # Add server status sensor
-    sensors.append(
-        DTSU666ServerStatusSensor(
-            server=server,
-            config_entry=config_entry,
+        
+        # Add summary sensor for key values
+        sensors.append(
+            DTSU666SummarySensor(
+                server=server,
+                config_entry=config_entry,
+            )
         )
-    )
-    
-    # Add summary sensor for key values
-    sensors.append(
-        DTSU666SummarySensor(
-            server=server,
-            config_entry=config_entry,
-        )
-    )
-    
-    async_add_entities(sensors)
+        
+        _LOGGER.info("Adding %d sensors to Home Assistant", len(sensors))
+        async_add_entities(sensors, True)
+        _LOGGER.info("Successfully added DTSU666 sensor entities")
+        
+    except Exception as ex:
+        _LOGGER.error("Failed to set up DTSU666 sensor platform: %s", ex, exc_info=True)
+        raise
 
 
 class DTSU666RegisterSensor(SensorEntity):
@@ -174,10 +187,13 @@ class DTSU666RegisterSensor(SensorEntity):
     def native_value(self) -> float | None:
         """Return the current register value."""
         try:
-            return self._server.get_register_value(self._register_name)
+            value = self._server.get_register_value(self._register_name)
+            if value is None:
+                return 0.0  # Return 0 instead of None for better display
+            return value
         except Exception as ex:
             _LOGGER.error("Error getting register value for %s: %s", self._register_name, ex)
-            return None
+            return 0.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -218,7 +234,11 @@ class DTSU666RegisterSensor(SensorEntity):
     @property
     def available(self) -> bool:
         """Return if sensor is available."""
-        return self._server.is_running and not self._server.is_meter_failed
+        try:
+            return self._server.is_running
+        except Exception as ex:
+            _LOGGER.error("Error checking availability for %s: %s", self._register_name, ex)
+            return False
 
 
 class DTSU666ServerStatusSensor(SensorEntity):
@@ -402,3 +422,5 @@ class DTSU666SummarySensor(SensorEntity):
     def available(self) -> bool:
         """Return if sensor is available."""
         return self._server.is_running
+
+

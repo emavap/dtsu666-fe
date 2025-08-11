@@ -133,14 +133,29 @@ class DTSU666ModbusServer:
         
         while self._running and retry_count < max_retries:
             try:
-                await StartUdpServer(
+                # Use the correct async approach for pymodbus
+                from pymodbus.server.async_io import StartAsyncUdpServer
+                
+                self._server = await StartAsyncUdpServer(
                     context=context,
                     identity=identity,
                     address=(self.host, self.port),
                     custom_functions=[],
-                    defer_start=False,
                 )
+                
+                _LOGGER.info("Modbus UDP server started successfully on %s:%d", self.host, self.port)
+                
+                # Keep the server running
+                while self._running:
+                    await asyncio.sleep(1)
+                    
                 break  # Server started successfully
+                
+            except ImportError:
+                # Fallback for older pymodbus versions
+                _LOGGER.warning("StartAsyncUdpServer not available, using threaded approach")
+                await self._run_threaded_server(context, identity)
+                break
                 
             except OSError as ex:
                 retry_count += 1
@@ -161,6 +176,33 @@ class DTSU666ModbusServer:
         if retry_count >= max_retries:
             _LOGGER.error("Failed to start server after %d attempts", max_retries)
             self._running = False
+            
+    async def _run_threaded_server(
+        self,
+        context: ModbusServerContext,
+        identity: ModbusDeviceIdentification
+    ) -> None:
+        """Run server in a thread to avoid event loop conflicts."""
+        import threading
+        from pymodbus.server import StartUdpServer
+        
+        def run_server():
+            try:
+                StartUdpServer(
+                    context=context,
+                    identity=identity,
+                    address=(self.host, self.port),
+                    custom_functions=[],
+                )
+            except Exception as ex:
+                _LOGGER.error("Error in threaded server: %s", ex)
+        
+        server_thread = threading.Thread(target=run_server, daemon=True)
+        server_thread.start()
+        
+        # Wait for server to be ready
+        await asyncio.sleep(1)
+        _LOGGER.info("Modbus UDP server started in background thread on %s:%d", self.host, self.port)
             
     async def _cleanup_on_error(self) -> None:
         """Clean up resources on startup error."""
@@ -191,6 +233,14 @@ class DTSU666ModbusServer:
                 await self._server_task
             except asyncio.CancelledError:
                 pass
+                
+        # Stop the pymodbus server if it exists
+        if hasattr(self, '_server') and self._server:
+            try:
+                await self._server.shutdown()
+                _LOGGER.info("Modbus server shutdown completed")
+            except Exception as ex:
+                _LOGGER.warning("Error shutting down server: %s", ex)
 
         _LOGGER.info("DTSU666 Modbus server stopped")
 
