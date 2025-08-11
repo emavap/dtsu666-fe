@@ -125,6 +125,6 @@ DEFAULT_VALUES = {
     "energy_import_total": 0.0,  # kWh
     "energy_export_total": 0.0,  # kWh
     
-    # System parameters (50Hz = European grid standard)
-    "frequency": 50.0,           # Hz - This should be mapped (required)
+    # System parameters (0Hz = no measurement)
+    "frequency": 0.0,            # Hz - This should be mapped (required)
 }

@@ -94,13 +94,17 @@ Shows server status with detailed diagnostics:
 - **Required Entities Status**: Health check of critical entities
 - **Meter Failed**: Boolean indicating if meter is simulating failure
 
+**Entity Visibility**: All diagnostic sensors are automatically enabled and visible in the Home Assistant UI under the "Diagnostic" category. You can find them in:
+- **Settings → Devices & Services → DTSU666 Emulator → [number] entities**
+- **Developer Tools → States** (search for "dtsu666")
+
 ## Default Values
 
 When entities are not mapped, the integration uses sensible defaults:
 - **Power/Current/Energy**: 0 - no load/consumption
-- **Voltages**: Uses mapped `voltage_l1` for all phases and line-to-line calculations
+- **Voltages**: Uses mapped `voltage_l1` for all phases and line-to-line calculations  
 - **Power Factor**: Calculated from power/reactive power, or 1.0 (unity) if no reactive power
-- **Frequency**: 50Hz - European grid standard (should be mapped as required)
+- **Frequency**: 0Hz - should be mapped as required entity
 
 ## Meter Failure Simulation
 

@@ -254,7 +254,7 @@ class DTSU666ModbusServer:
         derived = values.copy()
 
         # Use mapped voltage_l1 as reference for calculations if available
-        reference_voltage = derived.get("voltage_l1", 230.0)  # Default to 230V if not mapped
+        reference_voltage = derived.get("voltage_l1", 0.0)  # No default voltage
         
         # Calculate line-to-line voltages using reference voltage if needed
         if derived.get("voltage_l1_l2", 0) == 0 and reference_voltage > 0:

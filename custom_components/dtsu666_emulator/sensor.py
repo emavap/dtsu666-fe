@@ -9,6 +9,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfElectricCurrent,
@@ -80,6 +81,11 @@ class DTSU666RegisterSensor(SensorEntity):
         # Generate unique ID
         self._attr_unique_id = f"{config_entry.entry_id}_{register_name}_register"
         self._attr_name = f"DTSU666 {register_name.replace('_', ' ').title()} Register"
+        
+        # Make entity visible in UI as diagnostic
+        self._attr_entity_registry_enabled_default = True
+        self._attr_has_entity_name = True
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         
         # Set device info
         self._attr_device_info = DeviceInfo(
@@ -163,6 +169,11 @@ class DTSU666ServerStatusSensor(SensorEntity):
         self._attr_unique_id = f"{config_entry.entry_id}_server_status"
         self._attr_name = "DTSU666 Server Status"
         self._attr_icon = "mdi:server-network"
+        
+        # Make entity visible in UI as diagnostic
+        self._attr_entity_registry_enabled_default = True
+        self._attr_has_entity_name = True
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
