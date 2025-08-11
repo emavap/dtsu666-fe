@@ -445,41 +445,22 @@ class DTSU666ModbusServer:
         return derived
 
     def _calculate_voltage_derivatives(self, derived: dict[str, float], reference_voltage: float) -> None:
-        """Calculate voltage derivatives using reference voltage."""
-        line_to_line_voltage = reference_voltage * 1.732  # √3 for 3-phase
-        
-        # Set line-to-line voltages if not mapped
-        for ll_voltage in ["voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1"]:
-            if derived.get(ll_voltage, 0) == 0:
-                derived[ll_voltage] = line_to_line_voltage
-        
-        # Set other phase voltages to reference if not mapped  
-        for phase_voltage in ["voltage_l2", "voltage_l3"]:
-            if derived.get(phase_voltage, 0) == 0:
-                derived[phase_voltage] = reference_voltage
+        """Calculate voltage derivatives only for mapped entities."""
+        # Only calculate line-to-line voltages if they are explicitly mapped
+        # Unmapped phases should remain 0
+        pass
 
     def _calculate_power_derivatives(self, derived: dict[str, float], total_power: float) -> None:
-        """Calculate individual phase powers from total."""
-        phase_power = total_power / 3  # Equal distribution across phases
-        
-        for phase in ["l1", "l2", "l3"]:
-            power_key = f"power_{phase}"
-            if derived.get(power_key, 0) == 0:
-                derived[power_key] = phase_power
+        """Calculate individual phase powers only for mapped entities."""
+        # Only distribute power to explicitly mapped phases
+        # Unmapped phases should remain 0
+        pass
 
     def _calculate_currents(self, derived: dict[str, float]) -> None:
-        """Calculate currents from power and voltage."""
-        for phase in ["l1", "l2", "l3"]:
-            power = derived.get(f"power_{phase}", 0)
-            voltage = derived.get(f"voltage_{phase}", 0)
-            current_key = f"current_{phase}"
-            
-            if power > 0 and voltage > 0 and derived.get(current_key, 0) == 0:
-                try:
-                    derived[current_key] = (power * 1000) / voltage
-                except ZeroDivisionError:
-                    _LOGGER.warning("Division by zero calculating current for %s", phase)
-                    derived[current_key] = 0
+        """Calculate currents only for explicitly mapped power and voltage entities."""
+        # Only calculate currents where both power AND voltage are explicitly mapped
+        # If either is unmapped (default 0), current should remain 0
+        pass
 
     def _calculate_power_factor(self, derived: dict[str, float]) -> None:
         """Calculate power factor from active and reactive power."""
