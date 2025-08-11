@@ -96,11 +96,11 @@ Shows server status with detailed diagnostics:
 
 ## Default Values
 
-When entities are not mapped, the integration uses realistic defaults:
-- **Voltages**: 230V (L-N), 400V (L-L) - typical European grid
-- **Power Factor**: 0.95 - typical good power factor
-- **Frequency**: 50Hz - European grid standard  
-- **Power/Current/Energy**: 0.0 - no load
+When entities are not mapped, the integration uses sensible defaults:
+- **Power/Current/Energy**: 0 - no load/consumption
+- **Voltages**: Uses mapped `voltage_l1` for all phases and line-to-line calculations
+- **Power Factor**: Calculated from power/reactive power, or 1.0 (unity) if no reactive power
+- **Frequency**: 50Hz - European grid standard (should be mapped as required)
 
 ## Meter Failure Simulation
 

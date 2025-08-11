@@ -9,7 +9,6 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
-from homeassistant.helpers.entity_registry import async_get
 
 from .const import (
     CONF_ENTITY_MAPPINGS,
@@ -114,15 +113,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         title="DTSU666 Emulator",
                         data=self.data,
                     )
-
-        # Get available sensor entities
-        entity_registry = async_get(self.hass)
-        sensor_entities = [
-            entity.entity_id
-            for entity in entity_registry.entities.values()
-            if entity.entity_id.startswith("sensor.")
-            and entity.device_class in ("power", "voltage", "current", "frequency", "energy")
-        ]
 
         # Create schema for entity mapping
         entity_schema = {}

@@ -87,44 +87,44 @@ REQUIRED_ENTITIES = [
     "frequency",
 ]
 
-# Default values for unmapped entities (realistic European grid values)
+# Default values for unmapped entities (0 for no load, realistic grid values for system params)
 DEFAULT_VALUES = {
-    # Voltage measurements (typical European 230V/400V grid)
-    "voltage_l1_l2": 400.0,  # V
-    "voltage_l2_l3": 400.0,  # V
-    "voltage_l3_l1": 400.0,  # V
-    "voltage_l1": 230.0,     # V
-    "voltage_l2": 230.0,     # V
-    "voltage_l3": 230.0,     # V
+    # Voltage measurements (0V = no measurement, will use mapped voltage_l1 for calculations)
+    "voltage_l1_l2": 0.0,    # V
+    "voltage_l2_l3": 0.0,    # V  
+    "voltage_l3_l1": 0.0,    # V
+    "voltage_l1": 0.0,       # V - This should be mapped (required)
+    "voltage_l2": 0.0,       # V
+    "voltage_l3": 0.0,       # V
     
-    # Current measurements (calculated from power if not available)
-    "current_l1": 0.0,       # A - will be calculated from power/voltage
+    # Current measurements (0A = no current)
+    "current_l1": 0.0,       # A
     "current_l2": 0.0,       # A
     "current_l3": 0.0,       # A
     "current_neutral": 0.0,  # A
     
-    # Power measurements
-    "power_l1": 0.0,         # kW - will be calculated as total/3 phases
+    # Power measurements (0W = no load)
+    "power_l1": 0.0,         # kW
     "power_l2": 0.0,         # kW
     "power_l3": 0.0,         # kW
-    "power_total": 0.0,      # kW
+    "power_total": 0.0,      # kW - This should be mapped (required)
     
-    # Reactive power (assume good power factor)
+    # Reactive power (0 = no reactive load)
     "reactive_power_l1": 0.0,    # kVAr
     "reactive_power_l2": 0.0,    # kVAr
     "reactive_power_l3": 0.0,    # kVAr
     "reactive_power_total": 0.0, # kVAr
     
-    # Power factor (typical good values)
-    "power_factor_l1": 0.95,     # unitless
-    "power_factor_l2": 0.95,     # unitless
-    "power_factor_l3": 0.95,     # unitless
-    "power_factor_total": 0.95,  # unitless
+    # Power factor (0 = no measurement, will calculate if power available)
+    "power_factor_l1": 0.0,      # unitless
+    "power_factor_l2": 0.0,      # unitless
+    "power_factor_l3": 0.0,      # unitless
+    "power_factor_total": 0.0,   # unitless
     
-    # Energy measurements (start at 0)
+    # Energy measurements (0 = start at zero)
     "energy_import_total": 0.0,  # kWh
     "energy_export_total": 0.0,  # kWh
     
-    # System parameters (typical European grid)
-    "frequency": 50.0,           # Hz
+    # System parameters (50Hz = European grid standard)
+    "frequency": 50.0,           # Hz - This should be mapped (required)
 }

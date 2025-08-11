@@ -3,17 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
-from typing import Any
 
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.server import StartUdpServer
-from pymodbus.payload import BinaryPayloadBuilder, Endian
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.util import dt as dt_util
 
 from .const import REGISTER_MAP, DEFAULT_VALUES, REQUIRED_ENTITIES
 
@@ -258,37 +253,56 @@ class DTSU666ModbusServer:
         """Calculate derived values from basic measurements."""
         derived = values.copy()
 
-        # Calculate line-to-line voltages from line-to-neutral if needed
-        if "voltage_l1" in values and "voltage_l2" in values:
-            if "voltage_l1_l2" not in derived:
-                derived["voltage_l1_l2"] = abs(values["voltage_l1"] - values["voltage_l2"])
+        # Use mapped voltage_l1 as reference for calculations if available
+        reference_voltage = derived.get("voltage_l1", 230.0)  # Default to 230V if not mapped
         
-        if "voltage_l2" in values and "voltage_l3" in values:
-            if "voltage_l2_l3" not in derived:
-                derived["voltage_l2_l3"] = abs(values["voltage_l2"] - values["voltage_l3"])
-        
-        if "voltage_l3" in values and "voltage_l1" in values:
-            if "voltage_l3_l1" not in derived:
-                derived["voltage_l3_l1"] = abs(values["voltage_l3"] - values["voltage_l1"])
+        # Calculate line-to-line voltages using reference voltage if needed
+        if derived.get("voltage_l1_l2", 0) == 0 and reference_voltage > 0:
+            derived["voltage_l1_l2"] = reference_voltage * 1.732  # √3 for 3-phase
+        if derived.get("voltage_l2_l3", 0) == 0 and reference_voltage > 0:
+            derived["voltage_l2_l3"] = reference_voltage * 1.732
+        if derived.get("voltage_l3_l1", 0) == 0 and reference_voltage > 0:
+            derived["voltage_l3_l1"] = reference_voltage * 1.732
 
-        # Calculate currents from power and voltage if needed
+        # Set other phase voltages to reference if not mapped
+        if derived.get("voltage_l2", 0) == 0 and reference_voltage > 0:
+            derived["voltage_l2"] = reference_voltage
+        if derived.get("voltage_l3", 0) == 0 and reference_voltage > 0:
+            derived["voltage_l3"] = reference_voltage
+
+        # Calculate phase powers from total if not mapped
+        total_power = derived.get("power_total", 0)
+        if total_power > 0:
+            if derived.get("power_l1", 0) == 0:
+                derived["power_l1"] = total_power / 3  # Equal distribution
+            if derived.get("power_l2", 0) == 0:
+                derived["power_l2"] = total_power / 3
+            if derived.get("power_l3", 0) == 0:
+                derived["power_l3"] = total_power / 3
+
+        # Calculate currents from power and voltage
         for phase in ["l1", "l2", "l3"]:
             power_key = f"power_{phase}"
             voltage_key = f"voltage_{phase}"
             current_key = f"current_{phase}"
             
-            if (power_key in values and voltage_key in values 
-                and current_key not in derived and values[voltage_key] > 0):
-                derived[current_key] = abs(values[power_key] * 1000 / values[voltage_key])
+            power = derived.get(power_key, 0)
+            voltage = derived.get(voltage_key, 0)
+            
+            if power > 0 and voltage > 0 and derived.get(current_key, 0) == 0:
+                # Convert kW to W for calculation
+                derived[current_key] = (power * 1000) / voltage
 
-        # Calculate power factor if reactive power is available
-        if "power_total" in values and "reactive_power_total" in values:
-            if "power_factor_total" not in derived:
-                p = values["power_total"]
-                q = values["reactive_power_total"]
-                s = (p**2 + q**2)**0.5
-                if s > 0:
-                    derived["power_factor_total"] = p / s
+        # Calculate power factor from power and reactive power
+        active_power = derived.get("power_total", 0)
+        reactive_power = derived.get("reactive_power_total", 0)
+        
+        if active_power > 0 and derived.get("power_factor_total", 0) == 0:
+            if reactive_power > 0:
+                apparent_power = (active_power**2 + reactive_power**2)**0.5
+                derived["power_factor_total"] = active_power / apparent_power
+            else:
+                derived["power_factor_total"] = 1.0  # Unity power factor if no reactive power
 
         return derived
 
