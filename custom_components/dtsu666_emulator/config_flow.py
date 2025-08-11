@@ -24,6 +24,13 @@ from .const import (
     ENTITY_MAPPING_TYPES,
     REQUIRED_ENTITIES,
 )
+from .utils import (
+    get_device_class_for_entity,
+    is_valid_host,
+    parse_entity_mappings,
+    validate_entity_mappings,
+    validate_network_settings,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,14 +51,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate host and port
-            if not self._is_valid_host(user_input[CONF_HOST]):
-                errors[CONF_HOST] = "invalid_host"
-            elif not (1 <= user_input[CONF_PORT] <= 65535):
-                errors[CONF_PORT] = "invalid_port"
-            elif not (1 <= user_input[CONF_SLAVE_ID] <= 247):
-                errors[CONF_SLAVE_ID] = "invalid_slave_id"
-            else:
+            errors = validate_network_settings(user_input)
+            if not errors:
                 self.data = user_input
                 return await self.async_step_entities()
 
@@ -79,40 +80,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Parse entity mappings from form data
-            entity_mappings = {}
-            for key, value in user_input.items():
-                if key.startswith(f"{CONF_ENTITY_MAPPINGS}."):
-                    entity_type = key.replace(f"{CONF_ENTITY_MAPPINGS}.", "")
-                    # Only add non-empty values to mappings
-                    if value and value.strip():
-                        entity_mappings[entity_type] = value
+            entity_mappings = parse_entity_mappings(user_input)
+            errors = validate_entity_mappings(self.hass, entity_mappings)
             
-            # Validate required entities are mapped
-            missing_required = [
-                entity_type for entity_type in REQUIRED_ENTITIES
-                if not entity_mappings.get(entity_type)
-            ]
-            
-            if missing_required:
-                errors["base"] = "missing_required_entities"
-                _LOGGER.error("Missing required entities: %s", missing_required)
-            else:
-                # Validate entity IDs exist
-                invalid_entities = []
-                for entity_type, entity_id in entity_mappings.items():
-                    if entity_id and not self.hass.states.get(entity_id):
-                        invalid_entities.append(f"{entity_type}: {entity_id}")
-                
-                if invalid_entities:
-                    errors["base"] = "invalid_entities"
-                    _LOGGER.error("Invalid entities: %s", invalid_entities)
-                else:
-                    self.data[CONF_ENTITY_MAPPINGS] = entity_mappings
-                    return self.async_create_entry(
-                        title="DTSU666 Emulator",
-                        data=self.data,
-                    )
+            if not errors:
+                self.data[CONF_ENTITY_MAPPINGS] = entity_mappings
+                return self.async_create_entry(
+                    title="DTSU666 Emulator",
+                    data=self.data,
+                )
 
         # Create schema for entity mapping
         entity_schema = {}
@@ -123,7 +99,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 entity_schema[vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}")] = selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="sensor",
-                        device_class=self._get_device_class_for_entity(entity_type),
+                        device_class=get_device_class_for_entity(entity_type),
                     )
                 )
             else:
@@ -137,34 +113,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "required_entities": ", ".join(REQUIRED_ENTITIES),
             },
         )
-
-    @staticmethod
-    def _is_valid_host(host: str) -> bool:
-        """Validate host address."""
-        if host in ("0.0.0.0", "localhost"):
-            return True
-        
-        try:
-            import ipaddress
-            ipaddress.ip_address(host)
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
-    def _get_device_class_for_entity(entity_type: str) -> str | None:
-        """Get device class for entity type."""
-        if "voltage" in entity_type:
-            return "voltage"
-        elif "current" in entity_type:
-            return "current"
-        elif "power" in entity_type:
-            return "power"
-        elif "energy" in entity_type:
-            return "energy"
-        elif "frequency" in entity_type:
-            return "frequency"
-        return None
 
     @staticmethod
     @callback
@@ -199,14 +147,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Validate settings
-            if not self._is_valid_host(user_input[CONF_HOST]):
-                errors[CONF_HOST] = "invalid_host"
-            elif not (1 <= user_input[CONF_PORT] <= 65535):
-                errors[CONF_PORT] = "invalid_port"
-            elif not (1 <= user_input[CONF_SLAVE_ID] <= 247):
-                errors[CONF_SLAVE_ID] = "invalid_slave_id"
-            else:
+            errors = validate_network_settings(user_input)
+            if not errors:
                 # Update config entry data
                 new_data = dict(self.config_entry.data)
                 new_data.update(user_input)
@@ -243,44 +185,28 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             # Parse entity mappings, preserving existing mappings for fields not in form
             current_mappings = self.config_entry.data.get(CONF_ENTITY_MAPPINGS, {})
-            entity_mappings = current_mappings.copy()  # Start with existing mappings
+            entity_mappings = current_mappings.copy()
             
-            for key, value in user_input.items():
-                if key.startswith(f"{CONF_ENTITY_MAPPINGS}."):
-                    entity_type = key.replace(f"{CONF_ENTITY_MAPPINGS}.", "")
-                    # Update mapping: set to new value or remove if empty
+            # Update with new form data
+            form_mappings = parse_entity_mappings(user_input)
+            for entity_type in ENTITY_MAPPING_TYPES:
+                form_key = f"{CONF_ENTITY_MAPPINGS}.{entity_type}"
+                if form_key in user_input:
+                    value = user_input[form_key]
                     if value and value.strip():
                         entity_mappings[entity_type] = value.strip()
                     else:
-                        # Remove empty mappings
                         entity_mappings.pop(entity_type, None)
             
-            # Validate required entities
-            missing_required = [
-                entity_type for entity_type in REQUIRED_ENTITIES
-                if not entity_mappings.get(entity_type)
-            ]
-            
-            if missing_required:
-                errors["base"] = "missing_required_entities"
-            else:
-                # Validate entity IDs exist
-                invalid_entities = []
-                for entity_type, entity_id in entity_mappings.items():
-                    if entity_id and not self.hass.states.get(entity_id):
-                        invalid_entities.append(f"{entity_type}: {entity_id}")
-                
-                if invalid_entities:
-                    errors["base"] = "invalid_entities"
-                    _LOGGER.error("Invalid entities: %s", invalid_entities)
-                else:
-                    # Update config entry data
-                    new_data = dict(self.config_entry.data)
-                    new_data[CONF_ENTITY_MAPPINGS] = entity_mappings
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, data=new_data
-                    )
-                    return self.async_create_entry(title="", data={})
+            errors = validate_entity_mappings(self.hass, entity_mappings)
+            if not errors:
+                # Update config entry data
+                new_data = dict(self.config_entry.data)
+                new_data[CONF_ENTITY_MAPPINGS] = entity_mappings
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=new_data
+                )
+                return self.async_create_entry(title="", data={})
 
         # Create schema for entity mapping
         current_mappings = self.config_entry.data.get(CONF_ENTITY_MAPPINGS, {})
@@ -293,7 +219,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 entity_schema[vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)] = selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="sensor",
-                        device_class=self._get_device_class_for_entity(entity_type),
+                        device_class=get_device_class_for_entity(entity_type),
                     )
                 )
             else:
@@ -328,30 +254,3 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             }),
         )
 
-    @staticmethod
-    def _is_valid_host(host: str) -> bool:
-        """Validate host address."""
-        if host in ("0.0.0.0", "localhost"):
-            return True
-        
-        try:
-            import ipaddress
-            ipaddress.ip_address(host)
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
-    def _get_device_class_for_entity(entity_type: str) -> str | None:
-        """Get device class for entity type."""
-        if "voltage" in entity_type:
-            return "voltage"
-        elif "current" in entity_type:
-            return "current"
-        elif "power" in entity_type:
-            return "power"
-        elif "energy" in entity_type:
-            return "energy"
-        elif "frequency" in entity_type:
-            return "frequency"
-        return None

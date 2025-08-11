@@ -136,16 +136,26 @@ class DTSU666RegisterSensor(SensorEntity):
     @property
     def native_value(self) -> float | None:
         """Return the current register value."""
-        return self._server.get_register_value(self._register_name)
+        try:
+            return self._server.get_register_value(self._register_name)
+        except Exception as ex:
+            _LOGGER.error("Error getting register value for %s: %s", self._register_name, ex)
+            return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
+        try:
+            raw_value = self._server.get_raw_register_value(self._register_name)
+        except Exception as ex:
+            _LOGGER.error("Error getting raw register value for %s: %s", self._register_name, ex)
+            raw_value = None
+            
         return {
             "register_address": f"0x{self._register_info['addr']:04X}",
             "register_scale": self._register_info["scale"],
             "source_entity": self._source_entity,
-            "raw_register_value": self._server.get_raw_register_value(self._register_name),
+            "raw_register_value": raw_value,
         }
 
     @property
@@ -212,29 +222,39 @@ class DTSU666ServerStatusSensor(SensorEntity):
 
     def _get_required_entities_status(self) -> dict[str, str]:
         """Get status of required entities."""
-        entity_mappings = self._config_entry.data.get("entity_mappings", {})
-        status = {}
-        
-        from .const import REQUIRED_ENTITIES
-        for required_entity_type in REQUIRED_ENTITIES:
-            entity_id = entity_mappings.get(required_entity_type)
-            if not entity_id:
-                status[required_entity_type] = "not_mapped"
-                continue
-                
-            state = self.hass.states.get(entity_id)
-            if not state:
-                status[required_entity_type] = "entity_not_found"
-            elif state.state in ("unknown", "unavailable"):
-                status[required_entity_type] = "unavailable"
-            else:
+        try:
+            entity_mappings = self._config_entry.data.get("entity_mappings", {})
+            status = {}
+            
+            from .const import REQUIRED_ENTITIES
+            for required_entity_type in REQUIRED_ENTITIES:
                 try:
-                    float(state.state)
-                    status[required_entity_type] = "ok"
-                except (ValueError, TypeError):
-                    status[required_entity_type] = "invalid_value"
-        
-        return status
+                    entity_id = entity_mappings.get(required_entity_type)
+                    if not entity_id:
+                        status[required_entity_type] = "not_mapped"
+                        continue
+                        
+                    state = self.hass.states.get(entity_id)
+                    if not state:
+                        status[required_entity_type] = "entity_not_found"
+                    elif state.state in ("unknown", "unavailable"):
+                        status[required_entity_type] = "unavailable"
+                    else:
+                        try:
+                            float(state.state)
+                            status[required_entity_type] = "ok"
+                        except (ValueError, TypeError):
+                            status[required_entity_type] = "invalid_value"
+                            
+                except Exception as ex:
+                    _LOGGER.error("Error checking status for entity %s: %s", required_entity_type, ex)
+                    status[required_entity_type] = "error"
+            
+            return status
+            
+        except Exception as ex:
+            _LOGGER.error("Error getting required entities status: %s", ex)
+            return {}
 
     @property
     def available(self) -> bool:

@@ -46,17 +46,15 @@ class DTSU666ModbusServer:
     async def start(self) -> bool:
         """Start the Modbus server."""
         try:
+            # Validate configuration
+            if not self._validate_configuration():
+                return False
+                
             # Initialize data block with zeros
             self._data_block = ModbusSequentialDataBlock(0, [0] * 10000)
             
             # Setup device identification
-            identity = ModbusDeviceIdentification()
-            identity.VendorName = "CHINT"
-            identity.ProductCode = "DTSU666"
-            identity.VendorUrl = "http://www.chint.com"
-            identity.ProductName = "DTSU666 Energy Meter"
-            identity.ModelName = "DTSU666-FE"
-            identity.MajorMinorRevision = "1.0"
+            identity = self._create_device_identification()
 
             # Create server context
             slave_context = ModbusSlaveContext(
@@ -68,19 +66,10 @@ class DTSU666ModbusServer:
             # Start the server
             self._running = True
             
-            # Create server task
-            async def run_server():
-                await StartUdpServer(
-                    context=context,
-                    identity=identity,
-                    address=(self.host, self.port),
-                    custom_functions=[],
-                    defer_start=False,
-                )
-            
-            self._server_task = asyncio.create_task(run_server())
+            # Create server task with error handling
+            self._server_task = asyncio.create_task(self._run_server_with_recovery(context, identity))
 
-            # Start periodic updates
+            # Start periodic updates with error handling
             self._update_task = asyncio.create_task(self._periodic_update())
             
             _LOGGER.info(
@@ -93,7 +82,95 @@ class DTSU666ModbusServer:
 
         except Exception as ex:
             _LOGGER.error("Failed to start Modbus server: %s", ex)
+            await self._cleanup_on_error()
             return False
+            
+    def _validate_configuration(self) -> bool:
+        """Validate server configuration."""
+        try:
+            # Check port availability
+            if not (1 <= self.port <= 65535):
+                _LOGGER.error("Invalid port number: %d", self.port)
+                return False
+                
+            # Check slave ID
+            if not (1 <= self.slave_id <= 247):
+                _LOGGER.error("Invalid slave ID: %d", self.slave_id)
+                return False
+                
+            # Check update interval
+            if not (1 <= self.update_interval <= 300):
+                _LOGGER.error("Invalid update interval: %d", self.update_interval)
+                return False
+                
+            return True
+            
+        except Exception as ex:
+            _LOGGER.error("Configuration validation failed: %s", ex)
+            return False
+            
+    def _create_device_identification(self) -> ModbusDeviceIdentification:
+        """Create Modbus device identification."""
+        identity = ModbusDeviceIdentification()
+        identity.VendorName = "CHINT"
+        identity.ProductCode = "DTSU666"
+        identity.VendorUrl = "http://www.chint.com"
+        identity.ProductName = "DTSU666 Energy Meter"
+        identity.ModelName = "DTSU666-FE"
+        identity.MajorMinorRevision = "1.0"
+        return identity
+        
+    async def _run_server_with_recovery(
+        self, 
+        context: ModbusServerContext, 
+        identity: ModbusDeviceIdentification
+    ) -> None:
+        """Run the Modbus server with automatic recovery."""
+        max_retries = 3
+        retry_count = 0
+        
+        while self._running and retry_count < max_retries:
+            try:
+                await StartUdpServer(
+                    context=context,
+                    identity=identity,
+                    address=(self.host, self.port),
+                    custom_functions=[],
+                    defer_start=False,
+                )
+                break  # Server started successfully
+                
+            except OSError as ex:
+                retry_count += 1
+                if "Address already in use" in str(ex):
+                    _LOGGER.warning(
+                        "Port %d is busy, retrying in 2 seconds (attempt %d/%d)",
+                        self.port, retry_count, max_retries
+                    )
+                    await asyncio.sleep(2)
+                else:
+                    _LOGGER.error("Network error starting server: %s", ex)
+                    break
+                    
+            except Exception as ex:
+                _LOGGER.error("Unexpected error starting server: %s", ex)
+                break
+                
+        if retry_count >= max_retries:
+            _LOGGER.error("Failed to start server after %d attempts", max_retries)
+            self._running = False
+            
+    async def _cleanup_on_error(self) -> None:
+        """Clean up resources on startup error."""
+        self._running = False
+        
+        if self._update_task:
+            self._update_task.cancel()
+            self._update_task = None
+            
+        if self._server_task:
+            self._server_task.cancel() 
+            self._server_task = None
 
     async def stop(self) -> None:
         """Stop the Modbus server."""
@@ -117,15 +194,39 @@ class DTSU666ModbusServer:
 
     async def _periodic_update(self) -> None:
         """Periodically update Modbus registers from HA entities."""
+        error_count = 0
+        max_errors = 10
+        backoff_delay = self.update_interval
+        
         while self._running:
             try:
                 await self._update_registers()
+                # Reset error tracking on successful update
+                error_count = 0
+                backoff_delay = self.update_interval
                 await asyncio.sleep(self.update_interval)
+                
             except asyncio.CancelledError:
+                _LOGGER.debug("Periodic update task cancelled")
                 break
+                
             except Exception as ex:
-                _LOGGER.error("Error updating registers: %s", ex)
-                await asyncio.sleep(self.update_interval)
+                error_count += 1
+                _LOGGER.error("Error updating registers (attempt %d/%d): %s", 
+                            error_count, max_errors, ex)
+                
+                # Implement exponential backoff for repeated errors
+                if error_count >= max_errors:
+                    _LOGGER.error("Too many consecutive errors, stopping register updates")
+                    break
+                    
+                backoff_delay = min(backoff_delay * 1.5, 60)  # Max 60 second delay
+                _LOGGER.warning("Using backoff delay of %.1f seconds", backoff_delay)
+                
+                try:
+                    await asyncio.sleep(backoff_delay)
+                except asyncio.CancelledError:
+                    break
 
     async def _update_registers(self) -> None:
         """Update Modbus registers with current entity values."""
@@ -152,43 +253,50 @@ class DTSU666ModbusServer:
         
         # Update all registers
         for register_name, value in all_values.items():
-            if register_name not in REGISTER_MAP:
-                continue
+            self._update_single_register(register_name, value)
 
-            try:
-                # Get register info
-                register_info = REGISTER_MAP[register_name]
-                address = register_info["addr"]
-                scale = register_info["scale"]
+    def _update_single_register(self, register_name: str, value: float) -> None:
+        """Update a single Modbus register with proper scaling and bounds checking."""
+        if not self._data_block or register_name not in REGISTER_MAP:
+            return
 
-                # Scale and convert value
-                scaled_value = int(value / scale)
-                
-                # Handle negative values (two's complement)
-                if scaled_value < 0:
-                    scaled_value = (1 << 16) + scaled_value
+        try:
+            register_info = REGISTER_MAP[register_name]
+            address = register_info["addr"]
+            scale = register_info["scale"]
 
-                # Ensure value fits in 16-bit register
-                scaled_value = max(0, min(65535, scaled_value))
+            # Apply scaling: raw_value = actual_value / scale
+            # Example: 230V with scale 0.1 becomes 2300 in register
+            raw_value = value / scale if scale != 0 else 0
+            
+            # Convert to integer and handle bounds
+            scaled_value = int(round(raw_value))
+            
+            # Handle negative values with two's complement for 16-bit signed
+            if scaled_value < 0:
+                scaled_value = max(-32768, scaled_value)  # Min signed 16-bit
+                scaled_value = (1 << 16) + scaled_value if scaled_value < 0 else scaled_value
+            else:
+                scaled_value = min(32767, scaled_value)  # Max signed 16-bit
+            
+            # Ensure final value is in 16-bit unsigned range
+            scaled_value = scaled_value & 0xFFFF
 
-                # Write to register
-                self._data_block.setValues(address, [scaled_value])
-                
-                # Store current values for sensors
-                self._current_values[register_name] = value
-                self._raw_register_values[register_name] = scaled_value
-                
-                _LOGGER.debug(
-                    "Updated register %s (0x%04X): %s -> %d (scale: %s)",
-                    register_name,
-                    address,
-                    value,
-                    scaled_value,
-                    scale,
-                )
+            # Write to Modbus register
+            self._data_block.setValues(address, [scaled_value])
+            
+            # Store for diagnostic sensors
+            self._current_values[register_name] = value
+            self._raw_register_values[register_name] = scaled_value
+            
+            _LOGGER.debug(
+                "Updated register %s (0x%04X): %.3f -> %d (scale: %.3f)",
+                register_name, address, value, scaled_value, scale
+            )
 
-            except Exception as ex:
-                _LOGGER.error("Error updating register %s: %s", register_name, ex)
+        except Exception as ex:
+            _LOGGER.error("Error updating register %s with value %s: %s", 
+                         register_name, value, ex)
 
     def _check_meter_health(self) -> bool:
         """Check if meter should fail due to unavailable required entities."""
@@ -253,58 +361,72 @@ class DTSU666ModbusServer:
         """Calculate derived values from basic measurements."""
         derived = values.copy()
 
-        # Use mapped voltage_l1 as reference for calculations if available
-        reference_voltage = derived.get("voltage_l1", 0.0)  # No default voltage
+        # Get reference values for calculations
+        reference_voltage = derived.get("voltage_l1", 0.0)
+        total_power = derived.get("power_total", 0.0)
         
-        # Calculate line-to-line voltages using reference voltage if needed
-        if derived.get("voltage_l1_l2", 0) == 0 and reference_voltage > 0:
-            derived["voltage_l1_l2"] = reference_voltage * 1.732  # √3 for 3-phase
-        if derived.get("voltage_l2_l3", 0) == 0 and reference_voltage > 0:
-            derived["voltage_l2_l3"] = reference_voltage * 1.732
-        if derived.get("voltage_l3_l1", 0) == 0 and reference_voltage > 0:
-            derived["voltage_l3_l1"] = reference_voltage * 1.732
-
-        # Set other phase voltages to reference if not mapped
-        if derived.get("voltage_l2", 0) == 0 and reference_voltage > 0:
-            derived["voltage_l2"] = reference_voltage
-        if derived.get("voltage_l3", 0) == 0 and reference_voltage > 0:
-            derived["voltage_l3"] = reference_voltage
-
-        # Calculate phase powers from total if not mapped
-        total_power = derived.get("power_total", 0)
+        # Calculate voltage-related values
+        if reference_voltage > 0:
+            self._calculate_voltage_derivatives(derived, reference_voltage)
+        
+        # Calculate power-related values  
         if total_power > 0:
-            if derived.get("power_l1", 0) == 0:
-                derived["power_l1"] = total_power / 3  # Equal distribution
-            if derived.get("power_l2", 0) == 0:
-                derived["power_l2"] = total_power / 3
-            if derived.get("power_l3", 0) == 0:
-                derived["power_l3"] = total_power / 3
-
+            self._calculate_power_derivatives(derived, total_power)
+            
         # Calculate currents from power and voltage
+        self._calculate_currents(derived)
+        
+        # Calculate power factor
+        self._calculate_power_factor(derived)
+
+        return derived
+
+    def _calculate_voltage_derivatives(self, derived: dict[str, float], reference_voltage: float) -> None:
+        """Calculate voltage derivatives using reference voltage."""
+        line_to_line_voltage = reference_voltage * 1.732  # √3 for 3-phase
+        
+        # Set line-to-line voltages if not mapped
+        for ll_voltage in ["voltage_l1_l2", "voltage_l2_l3", "voltage_l3_l1"]:
+            if derived.get(ll_voltage, 0) == 0:
+                derived[ll_voltage] = line_to_line_voltage
+        
+        # Set other phase voltages to reference if not mapped  
+        for phase_voltage in ["voltage_l2", "voltage_l3"]:
+            if derived.get(phase_voltage, 0) == 0:
+                derived[phase_voltage] = reference_voltage
+
+    def _calculate_power_derivatives(self, derived: dict[str, float], total_power: float) -> None:
+        """Calculate individual phase powers from total."""
+        phase_power = total_power / 3  # Equal distribution across phases
+        
         for phase in ["l1", "l2", "l3"]:
             power_key = f"power_{phase}"
-            voltage_key = f"voltage_{phase}"
+            if derived.get(power_key, 0) == 0:
+                derived[power_key] = phase_power
+
+    def _calculate_currents(self, derived: dict[str, float]) -> None:
+        """Calculate currents from power and voltage."""
+        for phase in ["l1", "l2", "l3"]:
+            power = derived.get(f"power_{phase}", 0)
+            voltage = derived.get(f"voltage_{phase}", 0)
             current_key = f"current_{phase}"
             
-            power = derived.get(power_key, 0)
-            voltage = derived.get(voltage_key, 0)
-            
             if power > 0 and voltage > 0 and derived.get(current_key, 0) == 0:
-                # Convert kW to W for calculation
+                # I = P / V (convert kW to W)
                 derived[current_key] = (power * 1000) / voltage
 
-        # Calculate power factor from power and reactive power
+    def _calculate_power_factor(self, derived: dict[str, float]) -> None:
+        """Calculate power factor from active and reactive power."""
         active_power = derived.get("power_total", 0)
         reactive_power = derived.get("reactive_power_total", 0)
         
         if active_power > 0 and derived.get("power_factor_total", 0) == 0:
             if reactive_power > 0:
+                # PF = P / S where S = √(P² + Q²)
                 apparent_power = (active_power**2 + reactive_power**2)**0.5
-                derived["power_factor_total"] = active_power / apparent_power
+                derived["power_factor_total"] = min(1.0, active_power / apparent_power)
             else:
-                derived["power_factor_total"] = 1.0  # Unity power factor if no reactive power
-
-        return derived
+                derived["power_factor_total"] = 1.0  # Unity power factor
 
     def get_register_value(self, register_name: str) -> float | None:
         """Get the current scaled value for a register."""
