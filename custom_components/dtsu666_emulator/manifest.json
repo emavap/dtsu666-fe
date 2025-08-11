@@ -1,0 +1,12 @@
+{
+  "domain": "dtsu666_emulator",
+  "name": "DTSU666-FE Emulator",
+  "version": "1.0.0",
+  "documentation": "https://github.com/marcocamilli/dtsu666-FE",
+  "issue_tracker": "https://github.com/marcocamilli/dtsu666-FE/issues",
+  "requirements": ["pymodbus>=3.0.0"],
+  "codeowners": ["@marcocamilli"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "integration_type": "service"
+}

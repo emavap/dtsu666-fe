@@ -1,0 +1,7 @@
+{
+  "name": "DTSU666-FE Emulator",
+  "content_in_root": false,
+  "render_readme": true,
+  "homeassistant": "2023.3.0",
+  "iot_class": "Local Push"
+}

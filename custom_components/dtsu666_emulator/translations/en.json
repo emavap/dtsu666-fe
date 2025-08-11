@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DTSU666 Emulator Setup",
+        "description": "Configure the Modbus server settings",
+        "data": {
+          "host": "Host Address",
+          "port": "Port",
+          "slave_id": "Slave ID",
+          "update_interval": "Update Interval (seconds)"
+        }
+      },
+      "entities": {
+        "title": "Entity Mapping",
+        "description": "Map Home Assistant entities to DTSU666 registers. Required entities: {required_entities}",
+        "data": {
+          "entity_mappings.voltage_l1": "Voltage L1 (V)",
+          "entity_mappings.voltage_l2": "Voltage L2 (V)",
+          "entity_mappings.voltage_l3": "Voltage L3 (V)",
+          "entity_mappings.current_l1": "Current L1 (A)",
+          "entity_mappings.current_l2": "Current L2 (A)",
+          "entity_mappings.current_l3": "Current L3 (A)",
+          "entity_mappings.power_l1": "Power L1 (W)",
+          "entity_mappings.power_l2": "Power L2 (W)",
+          "entity_mappings.power_l3": "Power L3 (W)",
+          "entity_mappings.power_total": "Total Power (W)",
+          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr)",
+          "entity_mappings.power_factor_total": "Power Factor",
+          "entity_mappings.energy_import_total": "Energy Import (kWh)",
+          "entity_mappings.energy_export_total": "Energy Export (kWh)",
+          "entity_mappings.frequency": "Frequency (Hz)"
+        }
+      }
+    },
+    "error": {
+      "invalid_host": "Invalid host address",
+      "invalid_port": "Port must be between 1 and 65535",
+      "invalid_slave_id": "Slave ID must be between 1 and 247",
+      "missing_required_entities": "Please map all required entities"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "DTSU666 Emulator Options",
+        "description": "Update integration settings",
+        "data": {
+          "update_interval": "Update Interval (seconds)"
+        }
+      }
+    }
+  }
+}
