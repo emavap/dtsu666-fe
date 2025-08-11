@@ -44,7 +44,46 @@
     "step": {
       "init": {
         "title": "DTSU666 Emulator Options",
-        "description": "Update integration settings",
+        "description": "Choose what to configure",
+        "menu_options": {
+          "network": "Network Settings",
+          "entities": "Entity Mappings", 
+          "update_interval": "Update Interval"
+        }
+      },
+      "network": {
+        "title": "Network Settings",
+        "description": "Configure Modbus server network settings",
+        "data": {
+          "host": "Host Address",
+          "port": "Port",
+          "slave_id": "Slave ID"
+        }
+      },
+      "entities": {
+        "title": "Entity Mappings",
+        "description": "Update entity mappings. Required entities: {required_entities}",
+        "data": {
+          "entity_mappings.voltage_l1": "Voltage L1 (V)",
+          "entity_mappings.voltage_l2": "Voltage L2 (V)",
+          "entity_mappings.voltage_l3": "Voltage L3 (V)",
+          "entity_mappings.current_l1": "Current L1 (A)",
+          "entity_mappings.current_l2": "Current L2 (A)",
+          "entity_mappings.current_l3": "Current L3 (A)",
+          "entity_mappings.power_l1": "Power L1 (W)",
+          "entity_mappings.power_l2": "Power L2 (W)",
+          "entity_mappings.power_l3": "Power L3 (W)",
+          "entity_mappings.power_total": "Total Power (W)",
+          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr)",
+          "entity_mappings.power_factor_total": "Power Factor",
+          "entity_mappings.energy_import_total": "Energy Import (kWh)",
+          "entity_mappings.energy_export_total": "Energy Export (kWh)",
+          "entity_mappings.frequency": "Frequency (Hz)"
+        }
+      },
+      "update_interval": {
+        "title": "Update Interval",
+        "description": "Configure how often to update registers",
         "data": {
           "update_interval": "Update Interval (seconds)"
         }
