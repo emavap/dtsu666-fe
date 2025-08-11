@@ -37,18 +37,18 @@ async def async_setup_entry(
     server: DTSU666ModbusServer = hass.data[DOMAIN][config_entry.entry_id]
     entity_mappings = config_entry.data.get("entity_mappings", {})
     
-    # Create diagnostic sensors for all mapped registers
+    # Create diagnostic sensors for ALL registers (mapped + defaults)
     sensors = []
-    for register_name, entity_id in entity_mappings.items():
-        if register_name in REGISTER_MAP and entity_id:
-            sensors.append(
-                DTSU666RegisterSensor(
-                    server=server,
-                    config_entry=config_entry,
-                    register_name=register_name,
-                    source_entity=entity_id,
-                )
+    for register_name in REGISTER_MAP.keys():
+        source_entity = entity_mappings.get(register_name, "default")
+        sensors.append(
+            DTSU666RegisterSensor(
+                server=server,
+                config_entry=config_entry,
+                register_name=register_name,
+                source_entity=source_entity,
             )
+        )
     
     # Add server status sensor
     sensors.append(
@@ -146,7 +146,7 @@ class DTSU666RegisterSensor(SensorEntity):
     @property
     def available(self) -> bool:
         """Return if sensor is available."""
-        return self._server.is_running
+        return self._server.is_running and not self._server.is_meter_failed
 
 
 class DTSU666ServerStatusSensor(SensorEntity):
@@ -176,13 +176,17 @@ class DTSU666ServerStatusSensor(SensorEntity):
     @property
     def native_value(self) -> str:
         """Return the server status."""
-        if self._server.is_running:
+        if not self._server.is_running:
+            return "stopped"
+        elif self._server.is_meter_failed:
+            return "meter_failed"
+        else:
             return "running"
-        return "stopped"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return server connection attributes."""
+        entity_mappings = self._config_entry.data.get("entity_mappings", {})
         return {
             "host": self._config_entry.data.get("host"),
             "port": self._config_entry.data.get("port"),
@@ -191,8 +195,36 @@ class DTSU666ServerStatusSensor(SensorEntity):
                 "update_interval", 
                 self._config_entry.data.get("update_interval")
             ),
-            "mapped_entities": len(self._config_entry.data.get("entity_mappings", {})),
+            "mapped_entities": len(entity_mappings),
+            "meter_failed": self._server.is_meter_failed,
+            "required_entities_status": self._get_required_entities_status(),
         }
+
+    def _get_required_entities_status(self) -> dict[str, str]:
+        """Get status of required entities."""
+        entity_mappings = self._config_entry.data.get("entity_mappings", {})
+        status = {}
+        
+        from .const import REQUIRED_ENTITIES
+        for required_entity_type in REQUIRED_ENTITIES:
+            entity_id = entity_mappings.get(required_entity_type)
+            if not entity_id:
+                status[required_entity_type] = "not_mapped"
+                continue
+                
+            state = self.hass.states.get(entity_id)
+            if not state:
+                status[required_entity_type] = "entity_not_found"
+            elif state.state in ("unknown", "unavailable"):
+                status[required_entity_type] = "unavailable"
+            else:
+                try:
+                    float(state.state)
+                    status[required_entity_type] = "ok"
+                except (ValueError, TypeError):
+                    status[required_entity_type] = "invalid_value"
+        
+        return status
 
     @property
     def available(self) -> bool:

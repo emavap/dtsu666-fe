@@ -13,6 +13,8 @@ A Home Assistant HACS integration that emulates a CHINT DTSU666 smart meter for 
 - **Configuration UI**: Easy setup through Home Assistant's configuration flow
 - **Real-time Updates**: Continuously updates Modbus registers with current HA sensor values
 - **Diagnostic Sensors**: Exposes actual register values and server status for monitoring
+- **Intelligent Defaults**: Provides realistic default values for unmapped entities
+- **Failure Simulation**: Stops responding when required entities are unavailable (realistic meter behavior)
 
 ## Installation
 
@@ -77,20 +79,34 @@ The integration emulates these DTSU666 registers:
 The integration automatically creates diagnostic sensors to monitor register values:
 
 ### **Register Sensors**
-For each mapped entity, you'll get a sensor showing:
-- **Current Value**: The actual value being sent to the inverter
+For each register (mapped + defaults), you'll get a sensor showing:
+- **Current Value**: The actual value being sent to the inverter  
 - **Register Address**: Modbus register address (hex)
 - **Scale Factor**: Applied scaling factor
-- **Source Entity**: The HA entity providing the data
+- **Source Entity**: The HA entity providing the data (or "default")
 - **Raw Value**: Unscaled integer value in the register
 
 ### **Server Status Sensor** 
-Shows server status with attributes:
-- **Status**: running/stopped
+Shows server status with detailed diagnostics:
+- **Status**: `running` / `stopped` / `meter_failed`
 - **Network Settings**: host, port, slave ID
 - **Configuration**: update interval, mapped entities count
+- **Required Entities Status**: Health check of critical entities
+- **Meter Failed**: Boolean indicating if meter is simulating failure
 
-These sensors help verify the integration is working correctly and troubleshoot any data issues.
+## Default Values
+
+When entities are not mapped, the integration uses realistic defaults:
+- **Voltages**: 230V (L-N), 400V (L-L) - typical European grid
+- **Power Factor**: 0.95 - typical good power factor
+- **Frequency**: 50Hz - European grid standard  
+- **Power/Current/Energy**: 0.0 - no load
+
+## Meter Failure Simulation
+
+**Critical Behavior**: If any required entity (`power_total`, `voltage_l1`, `frequency`) becomes unavailable or has invalid values, the meter **stops responding** to simulate a real meter failure. This prevents the Huawei inverter from receiving incorrect data.
+
+**Recovery**: Once all required entities are available again, the meter automatically resumes normal operation.
 
 ## Troubleshooting
 

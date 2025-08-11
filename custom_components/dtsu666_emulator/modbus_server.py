@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .const import REGISTER_MAP
+from .const import REGISTER_MAP, DEFAULT_VALUES, REQUIRED_ENTITIES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ class DTSU666ModbusServer:
         self._running = False
         self._current_values: dict[str, float] = {}
         self._raw_register_values: dict[str, int] = {}
+        self._meter_failed = False
+        self._server = None
 
     async def start(self) -> bool:
         """Start the Modbus server."""
@@ -135,24 +137,30 @@ class DTSU666ModbusServer:
         if not self._data_block:
             return
 
-        for register_name, entity_id in self.entity_mappings.items():
-            if register_name not in REGISTER_MAP or not entity_id:
+        # Check if any required entities are unavailable
+        meter_should_fail = self._check_meter_health()
+        
+        if meter_should_fail:
+            if not self._meter_failed:
+                _LOGGER.warning("Meter simulation failed - required entities unavailable")
+                self._meter_failed = True
+                # Stop responding to Modbus requests by clearing all registers
+                await self._simulate_meter_failure()
+            return
+        else:
+            if self._meter_failed:
+                _LOGGER.info("Meter simulation recovered - entities now available")
+                self._meter_failed = False
+
+        # Get all values (mapped + defaults + calculated)
+        all_values = self._get_all_register_values()
+        
+        # Update all registers
+        for register_name, value in all_values.items():
+            if register_name not in REGISTER_MAP:
                 continue
 
             try:
-                # Get entity state
-                state = self.hass.states.get(entity_id)
-                if not state or state.state in ("unknown", "unavailable"):
-                    _LOGGER.debug("Entity %s is unavailable", entity_id)
-                    continue
-
-                # Convert state to float
-                try:
-                    value = float(state.state)
-                except (ValueError, TypeError):
-                    _LOGGER.warning("Invalid numeric value for %s: %s", entity_id, state.state)
-                    continue
-
                 # Get register info
                 register_info = REGISTER_MAP[register_name]
                 address = register_info["addr"]
@@ -186,6 +194,65 @@ class DTSU666ModbusServer:
 
             except Exception as ex:
                 _LOGGER.error("Error updating register %s: %s", register_name, ex)
+
+    def _check_meter_health(self) -> bool:
+        """Check if meter should fail due to unavailable required entities."""
+        for required_entity_type in REQUIRED_ENTITIES:
+            entity_id = self.entity_mappings.get(required_entity_type)
+            if not entity_id:
+                continue
+                
+            state = self.hass.states.get(entity_id)
+            if not state or state.state in ("unknown", "unavailable"):
+                _LOGGER.debug("Required entity %s (%s) is unavailable", required_entity_type, entity_id)
+                return True
+                
+            try:
+                float(state.state)
+            except (ValueError, TypeError):
+                _LOGGER.debug("Required entity %s (%s) has invalid value: %s", 
+                            required_entity_type, entity_id, state.state)
+                return True
+        
+        return False
+
+    async def _simulate_meter_failure(self) -> None:
+        """Simulate meter failure by clearing all registers or stopping server."""
+        if self._data_block:
+            # Clear all registers to simulate meter not responding
+            for register_info in REGISTER_MAP.values():
+                address = register_info["addr"]
+                self._data_block.setValues(address, [0])
+            
+            # Clear stored values
+            self._current_values.clear()
+            self._raw_register_values.clear()
+
+    def _get_all_register_values(self) -> dict[str, float]:
+        """Get all register values combining mapped entities, defaults, and calculated values."""
+        values = {}
+        
+        # Start with default values
+        values.update(DEFAULT_VALUES)
+        
+        # Override with mapped entity values where available
+        for register_name, entity_id in self.entity_mappings.items():
+            if not entity_id or register_name not in REGISTER_MAP:
+                continue
+                
+            state = self.hass.states.get(entity_id)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    value = float(state.state)
+                    values[register_name] = value
+                    _LOGGER.debug("Using mapped value for %s: %s from %s", register_name, value, entity_id)
+                except (ValueError, TypeError):
+                    _LOGGER.warning("Invalid numeric value for %s: %s", entity_id, state.state)
+        
+        # Calculate derived values
+        values = self._calculate_derived_values(values)
+        
+        return values
 
     def _calculate_derived_values(self, values: dict[str, float]) -> dict[str, float]:
         """Calculate derived values from basic measurements."""
@@ -237,3 +304,8 @@ class DTSU666ModbusServer:
     def is_running(self) -> bool:
         """Check if the server is running."""
         return self._running
+
+    @property
+    def is_meter_failed(self) -> bool:
+        """Check if meter is in failed state."""
+        return self._meter_failed
