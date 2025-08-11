@@ -137,11 +137,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 )
             else:
-                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default="")] = selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        type=selector.TextSelectorType.TEXT,
-                    )
-                )
+                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default="")] = str
 
         return self.async_show_form(
             step_id="entities",
@@ -255,14 +251,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Parse entity mappings
-            entity_mappings = {}
+            # Parse entity mappings, preserving existing mappings for fields not in form
+            current_mappings = self.config_entry.data.get(CONF_ENTITY_MAPPINGS, {})
+            entity_mappings = current_mappings.copy()  # Start with existing mappings
+            
             for key, value in user_input.items():
                 if key.startswith(f"{CONF_ENTITY_MAPPINGS}."):
                     entity_type = key.replace(f"{CONF_ENTITY_MAPPINGS}.", "")
-                    # Only add non-empty values to mappings
+                    # Update mapping: set to new value or remove if empty
                     if value and value.strip():
-                        entity_mappings[entity_type] = value
+                        entity_mappings[entity_type] = value.strip()
+                    else:
+                        # Remove empty mappings
+                        entity_mappings.pop(entity_type, None)
             
             # Validate required entities
             missing_required = [
@@ -306,11 +307,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 )
             else:
-                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)] = selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        type=selector.TextSelectorType.TEXT,
-                    )
-                )
+                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)] = str
 
         return self.async_show_form(
             step_id="entities",

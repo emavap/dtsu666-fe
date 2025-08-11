@@ -63,7 +63,7 @@
       },
       "entities": {
         "title": "Entity Mappings",
-        "description": "Update entity mappings. Required: {required_entities}. Leave optional fields empty to use defaults.",
+        "description": "Update entity mappings. Required: {required_entities}. For optional fields, leave empty or clear existing value to use defaults.",
         "data": {
           "entity_mappings.voltage_l1": "Voltage L1 (V) - REQUIRED",
           "entity_mappings.voltage_l2": "Voltage L2 (V) - Optional, leave empty for 230V default",
