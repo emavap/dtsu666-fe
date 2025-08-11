@@ -13,23 +13,23 @@
       },
       "entities": {
         "title": "Entity Mapping",
-        "description": "Map Home Assistant entities to DTSU666 registers. Required entities: {required_entities}",
+        "description": "Map Home Assistant entities to DTSU666 registers. Required: {required_entities}. Leave optional fields empty to use defaults.",
         "data": {
-          "entity_mappings.voltage_l1": "Voltage L1 (V)",
-          "entity_mappings.voltage_l2": "Voltage L2 (V)",
-          "entity_mappings.voltage_l3": "Voltage L3 (V)",
-          "entity_mappings.current_l1": "Current L1 (A)",
-          "entity_mappings.current_l2": "Current L2 (A)",
-          "entity_mappings.current_l3": "Current L3 (A)",
-          "entity_mappings.power_l1": "Power L1 (W)",
-          "entity_mappings.power_l2": "Power L2 (W)",
-          "entity_mappings.power_l3": "Power L3 (W)",
-          "entity_mappings.power_total": "Total Power (W)",
-          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr)",
-          "entity_mappings.power_factor_total": "Power Factor",
-          "entity_mappings.energy_import_total": "Energy Import (kWh)",
-          "entity_mappings.energy_export_total": "Energy Export (kWh)",
-          "entity_mappings.frequency": "Frequency (Hz)"
+          "entity_mappings.voltage_l1": "Voltage L1 (V) - REQUIRED",
+          "entity_mappings.voltage_l2": "Voltage L2 (V) - Optional, leave empty for 230V default",
+          "entity_mappings.voltage_l3": "Voltage L3 (V) - Optional, leave empty for 230V default", 
+          "entity_mappings.current_l1": "Current L1 (A) - Optional, calculated from power",
+          "entity_mappings.current_l2": "Current L2 (A) - Optional, calculated from power",
+          "entity_mappings.current_l3": "Current L3 (A) - Optional, calculated from power",
+          "entity_mappings.power_l1": "Power L1 (W) - Optional, calculated from total/3",
+          "entity_mappings.power_l2": "Power L2 (W) - Optional, calculated from total/3", 
+          "entity_mappings.power_l3": "Power L3 (W) - Optional, calculated from total/3",
+          "entity_mappings.power_total": "Total Power (W) - REQUIRED",
+          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr) - Optional, 0 default",
+          "entity_mappings.power_factor_total": "Power Factor - Optional, 0.95 default",
+          "entity_mappings.energy_import_total": "Energy Import (kWh) - Optional, 0 default",
+          "entity_mappings.energy_export_total": "Energy Export (kWh) - Optional, 0 default",
+          "entity_mappings.frequency": "Frequency (Hz) - REQUIRED"
         }
       }
     },
@@ -37,7 +37,8 @@
       "invalid_host": "Invalid host address",
       "invalid_port": "Port must be between 1 and 65535",
       "invalid_slave_id": "Slave ID must be between 1 and 247",
-      "missing_required_entities": "Please map all required entities"
+      "missing_required_entities": "Please map all required entities",
+      "invalid_entities": "Some entity IDs do not exist in Home Assistant"
     }
   },
   "options": {
@@ -62,23 +63,23 @@
       },
       "entities": {
         "title": "Entity Mappings",
-        "description": "Update entity mappings. Required entities: {required_entities}",
+        "description": "Update entity mappings. Required: {required_entities}. Leave optional fields empty to use defaults.",
         "data": {
-          "entity_mappings.voltage_l1": "Voltage L1 (V)",
-          "entity_mappings.voltage_l2": "Voltage L2 (V)",
-          "entity_mappings.voltage_l3": "Voltage L3 (V)",
-          "entity_mappings.current_l1": "Current L1 (A)",
-          "entity_mappings.current_l2": "Current L2 (A)",
-          "entity_mappings.current_l3": "Current L3 (A)",
-          "entity_mappings.power_l1": "Power L1 (W)",
-          "entity_mappings.power_l2": "Power L2 (W)",
-          "entity_mappings.power_l3": "Power L3 (W)",
-          "entity_mappings.power_total": "Total Power (W)",
-          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr)",
-          "entity_mappings.power_factor_total": "Power Factor",
-          "entity_mappings.energy_import_total": "Energy Import (kWh)",
-          "entity_mappings.energy_export_total": "Energy Export (kWh)",
-          "entity_mappings.frequency": "Frequency (Hz)"
+          "entity_mappings.voltage_l1": "Voltage L1 (V) - REQUIRED",
+          "entity_mappings.voltage_l2": "Voltage L2 (V) - Optional, leave empty for 230V default",
+          "entity_mappings.voltage_l3": "Voltage L3 (V) - Optional, leave empty for 230V default", 
+          "entity_mappings.current_l1": "Current L1 (A) - Optional, calculated from power",
+          "entity_mappings.current_l2": "Current L2 (A) - Optional, calculated from power",
+          "entity_mappings.current_l3": "Current L3 (A) - Optional, calculated from power",
+          "entity_mappings.power_l1": "Power L1 (W) - Optional, calculated from total/3",
+          "entity_mappings.power_l2": "Power L2 (W) - Optional, calculated from total/3", 
+          "entity_mappings.power_l3": "Power L3 (W) - Optional, calculated from total/3",
+          "entity_mappings.power_total": "Total Power (W) - REQUIRED",
+          "entity_mappings.reactive_power_total": "Total Reactive Power (VAr) - Optional, 0 default",
+          "entity_mappings.power_factor_total": "Power Factor - Optional, 0.95 default",
+          "entity_mappings.energy_import_total": "Energy Import (kWh) - Optional, 0 default",
+          "entity_mappings.energy_export_total": "Energy Export (kWh) - Optional, 0 default",
+          "entity_mappings.frequency": "Frequency (Hz) - REQUIRED"
         }
       },
       "update_interval": {

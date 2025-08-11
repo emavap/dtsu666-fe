@@ -83,9 +83,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Parse entity mappings from form data
             entity_mappings = {}
             for key, value in user_input.items():
-                if key.startswith(f"{CONF_ENTITY_MAPPINGS}.") and value:
+                if key.startswith(f"{CONF_ENTITY_MAPPINGS}."):
                     entity_type = key.replace(f"{CONF_ENTITY_MAPPINGS}.", "")
-                    entity_mappings[entity_type] = value
+                    # Only add non-empty values to mappings
+                    if value and value.strip():
+                        entity_mappings[entity_type] = value
             
             # Validate required entities are mapped
             missing_required = [
@@ -97,11 +99,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "missing_required_entities"
                 _LOGGER.error("Missing required entities: %s", missing_required)
             else:
-                self.data[CONF_ENTITY_MAPPINGS] = entity_mappings
-                return self.async_create_entry(
-                    title="DTSU666 Emulator",
-                    data=self.data,
-                )
+                # Validate entity IDs exist
+                invalid_entities = []
+                for entity_type, entity_id in entity_mappings.items():
+                    if entity_id and not self.hass.states.get(entity_id):
+                        invalid_entities.append(f"{entity_type}: {entity_id}")
+                
+                if invalid_entities:
+                    errors["base"] = "invalid_entities"
+                    _LOGGER.error("Invalid entities: %s", invalid_entities)
+                else:
+                    self.data[CONF_ENTITY_MAPPINGS] = entity_mappings
+                    return self.async_create_entry(
+                        title="DTSU666 Emulator",
+                        data=self.data,
+                    )
 
         # Get available sensor entities
         entity_registry = async_get(self.hass)
@@ -116,16 +128,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entity_schema = {}
         for entity_type in ENTITY_MAPPING_TYPES:
             is_required = entity_type in REQUIRED_ENTITIES
-            entity_schema[
-                vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}")
-                if is_required
-                else vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}")
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class=self._get_device_class_for_entity(entity_type),
+            
+            if is_required:
+                entity_schema[vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}")] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class=self._get_device_class_for_entity(entity_type),
+                    )
                 )
-            )
+            else:
+                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default="")] = selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    )
+                )
 
         return self.async_show_form(
             step_id="entities",
@@ -242,9 +258,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             # Parse entity mappings
             entity_mappings = {}
             for key, value in user_input.items():
-                if key.startswith(f"{CONF_ENTITY_MAPPINGS}.") and value:
+                if key.startswith(f"{CONF_ENTITY_MAPPINGS}."):
                     entity_type = key.replace(f"{CONF_ENTITY_MAPPINGS}.", "")
-                    entity_mappings[entity_type] = value
+                    # Only add non-empty values to mappings
+                    if value and value.strip():
+                        entity_mappings[entity_type] = value
             
             # Validate required entities
             missing_required = [
@@ -255,13 +273,23 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if missing_required:
                 errors["base"] = "missing_required_entities"
             else:
-                # Update config entry data
-                new_data = dict(self.config_entry.data)
-                new_data[CONF_ENTITY_MAPPINGS] = entity_mappings
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=new_data
-                )
-                return self.async_create_entry(title="", data={})
+                # Validate entity IDs exist
+                invalid_entities = []
+                for entity_type, entity_id in entity_mappings.items():
+                    if entity_id and not self.hass.states.get(entity_id):
+                        invalid_entities.append(f"{entity_type}: {entity_id}")
+                
+                if invalid_entities:
+                    errors["base"] = "invalid_entities"
+                    _LOGGER.error("Invalid entities: %s", invalid_entities)
+                else:
+                    # Update config entry data
+                    new_data = dict(self.config_entry.data)
+                    new_data[CONF_ENTITY_MAPPINGS] = entity_mappings
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, data=new_data
+                    )
+                    return self.async_create_entry(title="", data={})
 
         # Create schema for entity mapping
         current_mappings = self.config_entry.data.get(CONF_ENTITY_MAPPINGS, {})
@@ -270,16 +298,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             is_required = entity_type in REQUIRED_ENTITIES
             current_value = current_mappings.get(entity_type, "")
             
-            entity_schema[
-                vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)
-                if is_required
-                else vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)
-            ] = selector.EntitySelector(
-                selector.EntitySelectorConfig(
-                    domain="sensor",
-                    device_class=self._get_device_class_for_entity(entity_type),
+            if is_required:
+                entity_schema[vol.Required(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)] = selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                        device_class=self._get_device_class_for_entity(entity_type),
+                    )
                 )
-            )
+            else:
+                entity_schema[vol.Optional(f"{CONF_ENTITY_MAPPINGS}.{entity_type}", default=current_value)] = selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    )
+                )
 
         return self.async_show_form(
             step_id="entities",
