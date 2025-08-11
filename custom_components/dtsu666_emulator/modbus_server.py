@@ -334,12 +334,21 @@ class DTSU666ModbusServer:
             # Convert to integer and handle bounds
             scaled_value = int(round(raw_value))
             
-            # Handle negative values with two's complement for 16-bit signed
-            if scaled_value < 0:
-                scaled_value = max(-32768, scaled_value)  # Min signed 16-bit
-                scaled_value = (1 << 16) + scaled_value
+            # Handle energy registers specially - they have 16-bit limits
+            if "energy" in register_name:
+                if scaled_value > 32767:
+                    scaled_value = 32767
+                    _LOGGER.debug("Energy value %s (%.1f kWh) exceeds 16-bit limit, clamped to 327.67 kWh", 
+                                register_name, value)
+                elif scaled_value < 0:
+                    scaled_value = 0  # Energy can't be negative
             else:
-                scaled_value = min(32767, scaled_value)  # Max signed 16-bit
+                # Handle negative values with two's complement for 16-bit signed
+                if scaled_value < 0:
+                    scaled_value = max(-32768, scaled_value)  # Min signed 16-bit
+                    scaled_value = (1 << 16) + scaled_value
+                else:
+                    scaled_value = min(32767, scaled_value)  # Max signed 16-bit
             
             # Ensure final value is in 16-bit unsigned range
             scaled_value = scaled_value & 0xFFFF

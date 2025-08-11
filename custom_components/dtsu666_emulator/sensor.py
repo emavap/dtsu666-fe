@@ -149,13 +149,17 @@ class DTSU666RegisterSensor(SensorEntity):
             self._attr_device_class = SensorDeviceClass.CURRENT
             self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        elif "power" in self._register_name and "reactive" not in self._register_name:
-            self._attr_device_class = SensorDeviceClass.POWER
-            self._attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+        elif "power_factor" in self._register_name:
+            self._attr_device_class = SensorDeviceClass.POWER_FACTOR
+            self._attr_native_unit_of_measurement = None
             self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "reactive_power" in self._register_name:
             self._attr_device_class = SensorDeviceClass.REACTIVE_POWER
             self._attr_native_unit_of_measurement = "kVAr"
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        elif "power" in self._register_name:
+            self._attr_device_class = SensorDeviceClass.POWER
+            self._attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
             self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "energy" in self._register_name:
             self._attr_device_class = SensorDeviceClass.ENERGY
@@ -164,10 +168,6 @@ class DTSU666RegisterSensor(SensorEntity):
         elif "frequency" in self._register_name:
             self._attr_device_class = SensorDeviceClass.FREQUENCY
             self._attr_native_unit_of_measurement = UnitOfFrequency.HERTZ
-            self._attr_state_class = SensorStateClass.MEASUREMENT
-        elif "power_factor" in self._register_name:
-            self._attr_device_class = SensorDeviceClass.POWER_FACTOR
-            self._attr_native_unit_of_measurement = None
             self._attr_state_class = SensorStateClass.MEASUREMENT
         else:
             self._attr_native_unit_of_measurement = unit
