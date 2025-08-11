@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 
 from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSlaveContext, ModbusServerContext
 from pymodbus.device import ModbusDeviceIdentification
@@ -42,6 +43,7 @@ class DTSU666ModbusServer:
         self._raw_register_values: dict[str, int] = {}
         self._meter_failed = False
         self._server = None
+        self._state_lock = threading.RLock()
 
     async def start(self) -> bool:
         """Start the Modbus server."""
@@ -236,22 +238,32 @@ class DTSU666ModbusServer:
         # Check if any required entities are unavailable
         meter_should_fail = self._check_meter_health()
         
-        if meter_should_fail:
-            if not self._meter_failed:
-                _LOGGER.warning("Meter simulation failed - required entities unavailable")
-                self._meter_failed = True
-                # Stop responding to Modbus requests by clearing all registers
-                await self._simulate_meter_failure()
-            return
-        else:
-            if self._meter_failed:
-                _LOGGER.info("Meter simulation recovered - entities now available")
-                self._meter_failed = False
+        with self._state_lock:
+            if meter_should_fail:
+                if not self._meter_failed:
+                    _LOGGER.warning("Meter simulation failed - required entities unavailable")
+                    self._meter_failed = True
+                    # Stop responding to Modbus requests by clearing all registers
+                    await self._simulate_meter_failure()
+                return
+            else:
+                if self._meter_failed:
+                    _LOGGER.info("Meter simulation recovered - entities now available")
+                    self._meter_failed = False
+                    await self._restore_meter_values()
 
         # Get all values (mapped + defaults + calculated)
         all_values = self._get_all_register_values()
         
         # Update all registers
+        for register_name, value in all_values.items():
+            self._update_single_register(register_name, value)
+    
+    async def _restore_meter_values(self) -> None:
+        """Restore meter values after recovery from failure."""
+        _LOGGER.debug("Restoring meter values after failure recovery")
+        # Force immediate update of all register values
+        all_values = self._get_all_register_values()
         for register_name, value in all_values.items():
             self._update_single_register(register_name, value)
 
@@ -275,7 +287,7 @@ class DTSU666ModbusServer:
             # Handle negative values with two's complement for 16-bit signed
             if scaled_value < 0:
                 scaled_value = max(-32768, scaled_value)  # Min signed 16-bit
-                scaled_value = (1 << 16) + scaled_value if scaled_value < 0 else scaled_value
+                scaled_value = (1 << 16) + scaled_value
             else:
                 scaled_value = min(32767, scaled_value)  # Max signed 16-bit
             
@@ -285,9 +297,9 @@ class DTSU666ModbusServer:
             # Write to Modbus register
             self._data_block.setValues(address, [scaled_value])
             
-            # Store for diagnostic sensors
-            self._current_values[register_name] = value
-            self._raw_register_values[register_name] = scaled_value
+            with self._state_lock:
+                self._current_values[register_name] = value
+                self._raw_register_values[register_name] = scaled_value
             
             _LOGGER.debug(
                 "Updated register %s (0x%04X): %.3f -> %d (scale: %.3f)",
@@ -303,7 +315,8 @@ class DTSU666ModbusServer:
         for required_entity_type in REQUIRED_ENTITIES:
             entity_id = self.entity_mappings.get(required_entity_type)
             if not entity_id:
-                continue
+                _LOGGER.debug("Required entity %s is not mapped", required_entity_type)
+                return True
                 
             state = self.hass.states.get(entity_id)
             if not state or state.state in ("unknown", "unavailable"):
@@ -327,9 +340,9 @@ class DTSU666ModbusServer:
                 address = register_info["addr"]
                 self._data_block.setValues(address, [0])
             
-            # Clear stored values
-            self._current_values.clear()
-            self._raw_register_values.clear()
+            with self._state_lock:
+                self._current_values.clear()
+                self._raw_register_values.clear()
 
     def _get_all_register_values(self) -> dict[str, float]:
         """Get all register values combining mapped entities, defaults, and calculated values."""
@@ -412,8 +425,11 @@ class DTSU666ModbusServer:
             current_key = f"current_{phase}"
             
             if power > 0 and voltage > 0 and derived.get(current_key, 0) == 0:
-                # I = P / V (convert kW to W)
-                derived[current_key] = (power * 1000) / voltage
+                try:
+                    derived[current_key] = (power * 1000) / voltage
+                except ZeroDivisionError:
+                    _LOGGER.warning("Division by zero calculating current for %s", phase)
+                    derived[current_key] = 0
 
     def _calculate_power_factor(self, derived: dict[str, float]) -> None:
         """Calculate power factor from active and reactive power."""
@@ -421,20 +437,24 @@ class DTSU666ModbusServer:
         reactive_power = derived.get("reactive_power_total", 0)
         
         if active_power > 0 and derived.get("power_factor_total", 0) == 0:
-            if reactive_power > 0:
-                # PF = P / S where S = √(P² + Q²)
+            if reactive_power != 0:
                 apparent_power = (active_power**2 + reactive_power**2)**0.5
-                derived["power_factor_total"] = min(1.0, active_power / apparent_power)
+                if apparent_power > 0:
+                    derived["power_factor_total"] = min(1.0, abs(active_power) / apparent_power)
+                else:
+                    derived["power_factor_total"] = 1.0
             else:
-                derived["power_factor_total"] = 1.0  # Unity power factor
+                derived["power_factor_total"] = 1.0
 
     def get_register_value(self, register_name: str) -> float | None:
         """Get the current scaled value for a register."""
-        return self._current_values.get(register_name)
+        with self._state_lock:
+            return self._current_values.get(register_name)
 
     def get_raw_register_value(self, register_name: str) -> int | None:
         """Get the raw register value (as stored in Modbus)."""
-        return self._raw_register_values.get(register_name)
+        with self._state_lock:
+            return self._raw_register_values.get(register_name)
 
     @property
     def is_running(self) -> bool:
@@ -444,4 +464,5 @@ class DTSU666ModbusServer:
     @property
     def is_meter_failed(self) -> bool:
         """Check if meter is in failed state."""
-        return self._meter_failed
+        with self._state_lock:
+            return self._meter_failed

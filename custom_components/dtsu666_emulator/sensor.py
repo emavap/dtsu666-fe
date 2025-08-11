@@ -58,6 +58,14 @@ async def async_setup_entry(
         )
     )
     
+    # Add summary sensor for key values
+    sensors.append(
+        DTSU666SummarySensor(
+            server=server,
+            config_entry=config_entry,
+        )
+    )
+    
     async_add_entities(sensors)
 
 
@@ -80,12 +88,10 @@ class DTSU666RegisterSensor(SensorEntity):
         
         # Generate unique ID
         self._attr_unique_id = f"{config_entry.entry_id}_{register_name}_register"
-        self._attr_name = f"DTSU666 {register_name.replace('_', ' ').title()} Register"
+        friendly_name = self._get_friendly_name(register_name)
+        self._attr_name = f"DTSU666 {friendly_name}"
         
-        # Make entity visible in UI as diagnostic
         self._attr_entity_registry_enabled_default = True
-        self._attr_has_entity_name = True
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         
         # Set device info
         self._attr_device_info = DeviceInfo(
@@ -98,6 +104,37 @@ class DTSU666RegisterSensor(SensorEntity):
         
         # Set sensor properties based on register type
         self._setup_sensor_properties()
+
+    def _get_friendly_name(self, register_name: str) -> str:
+        """Get a friendly display name for the register."""
+        name_map = {
+            "voltage_l1": "Voltage L1",
+            "voltage_l2": "Voltage L2", 
+            "voltage_l3": "Voltage L3",
+            "voltage_l1_l2": "Voltage L1-L2",
+            "voltage_l2_l3": "Voltage L2-L3",
+            "voltage_l3_l1": "Voltage L3-L1",
+            "current_l1": "Current L1",
+            "current_l2": "Current L2",
+            "current_l3": "Current L3",
+            "current_neutral": "Current Neutral",
+            "power_l1": "Power L1",
+            "power_l2": "Power L2",
+            "power_l3": "Power L3",
+            "power_total": "Total Power",
+            "reactive_power_l1": "Reactive Power L1",
+            "reactive_power_l2": "Reactive Power L2",
+            "reactive_power_l3": "Reactive Power L3",
+            "reactive_power_total": "Total Reactive Power",
+            "power_factor_l1": "Power Factor L1",
+            "power_factor_l2": "Power Factor L2",
+            "power_factor_l3": "Power Factor L3",
+            "power_factor_total": "Total Power Factor",
+            "energy_import_total": "Total Energy Import",
+            "energy_export_total": "Total Energy Export",
+            "frequency": "Grid Frequency",
+        }
+        return name_map.get(register_name, register_name.replace('_', ' ').title())
 
     def _setup_sensor_properties(self) -> None:
         """Set up sensor properties based on register type."""
@@ -112,10 +149,10 @@ class DTSU666RegisterSensor(SensorEntity):
             self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
         elif "power" in self._register_name and "reactive" not in self._register_name:
             self._attr_device_class = SensorDeviceClass.POWER
-            self._attr_native_unit_of_measurement = UnitOfPower.WATT
+            self._attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
         elif "reactive_power" in self._register_name:
             self._attr_device_class = SensorDeviceClass.REACTIVE_POWER
-            self._attr_native_unit_of_measurement = "VAr"
+            self._attr_native_unit_of_measurement = "kVAr"
         elif "energy" in self._register_name:
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -147,16 +184,36 @@ class DTSU666RegisterSensor(SensorEntity):
         """Return additional state attributes."""
         try:
             raw_value = self._server.get_raw_register_value(self._register_name)
+            current_value = self._server.get_register_value(self._register_name)
         except Exception as ex:
-            _LOGGER.error("Error getting raw register value for %s: %s", self._register_name, ex)
+            _LOGGER.error("Error getting register values for %s: %s", self._register_name, ex)
             raw_value = None
+            current_value = None
             
-        return {
+        attributes = {
             "register_address": f"0x{self._register_info['addr']:04X}",
             "register_scale": self._register_info["scale"],
-            "source_entity": self._source_entity,
+            "source_entity": self._source_entity if self._source_entity != "default" else "Default Value",
             "raw_register_value": raw_value,
+            "modbus_hex": f"0x{raw_value:04X}" if raw_value is not None else None,
         }
+        
+        # Add calculated vs mapped information
+        if self._source_entity == "default":
+            attributes["data_source"] = "Calculated/Default"
+        else:
+            attributes["data_source"] = "Mapped Entity"
+            # Try to get the actual entity state
+            try:
+                if self.hass and self._source_entity != "default":
+                    state = self.hass.states.get(self._source_entity)
+                    if state:
+                        attributes["source_entity_state"] = state.state
+                        attributes["source_entity_unit"] = state.attributes.get("unit_of_measurement", "")
+            except Exception:
+                pass
+                
+        return attributes
 
     @property
     def available(self) -> bool:
@@ -180,10 +237,7 @@ class DTSU666ServerStatusSensor(SensorEntity):
         self._attr_name = "DTSU666 Server Status"
         self._attr_icon = "mdi:server-network"
         
-        # Make entity visible in UI as diagnostic
         self._attr_entity_registry_enabled_default = True
-        self._attr_has_entity_name = True
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
         
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
@@ -260,3 +314,91 @@ class DTSU666ServerStatusSensor(SensorEntity):
     def available(self) -> bool:
         """Return if sensor is available."""
         return True
+
+
+class DTSU666SummarySensor(SensorEntity):
+    """Sensor that shows a summary of key Modbus register values."""
+
+    def __init__(
+        self,
+        server: DTSU666ModbusServer,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the sensor."""
+        self._server = server
+        self._config_entry = config_entry
+        
+        self._attr_unique_id = f"{config_entry.entry_id}_register_summary"
+        self._attr_name = "DTSU666 Register Summary"
+        self._attr_icon = "mdi:chart-box"
+        
+        self._attr_entity_registry_enabled_default = True
+        
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config_entry.entry_id)},
+            name="DTSU666 Emulator",
+            manufacturer="CHINT (Emulated)",
+            model="DTSU666-FE", 
+            sw_version="1.0.0",
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Return the summary status."""
+        try:
+            total_registers = len(REGISTER_MAP)
+            active_registers = len([v for v in [
+                self._server.get_register_value(name) for name in REGISTER_MAP.keys()
+            ] if v is not None and v != 0])
+            
+            return f"{active_registers}/{total_registers} registers active"
+        except Exception as ex:
+            _LOGGER.error("Error getting summary: %s", ex)
+            return "Error"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return summary of all register values."""
+        try:
+            summary = {}
+            key_registers = ["power_total", "voltage_l1", "frequency", "current_l1", "energy_import_total", "energy_export_total"]
+            
+            for register_name in key_registers:
+                try:
+                    value = self._server.get_register_value(register_name)
+                    raw_value = self._server.get_raw_register_value(register_name)
+                    
+                    if value is not None:
+                        unit = REGISTER_MAP[register_name].get("unit", "")
+                        summary[f"{register_name}_value"] = f"{value:.3f} {unit}".strip()
+                        summary[f"{register_name}_raw"] = raw_value
+                        summary[f"{register_name}_address"] = f"0x{REGISTER_MAP[register_name]['addr']:04X}"
+                        
+                except Exception as ex:
+                    _LOGGER.debug("Error getting register %s: %s", register_name, ex)
+                    summary[f"{register_name}_value"] = "N/A"
+            
+            # Add non-zero register count
+            all_values = {}
+            for register_name in REGISTER_MAP.keys():
+                try:
+                    value = self._server.get_register_value(register_name)
+                    if value is not None and value != 0:
+                        all_values[register_name] = value
+                except Exception:
+                    pass
+                    
+            summary["active_registers"] = list(all_values.keys())
+            summary["total_registers"] = len(REGISTER_MAP)
+            summary["meter_status"] = "failed" if self._server.is_meter_failed else "running"
+            
+            return summary
+            
+        except Exception as ex:
+            _LOGGER.error("Error building register summary: %s", ex)
+            return {"error": str(ex)}
+
+    @property
+    def available(self) -> bool:
+        """Return if sensor is available."""
+        return self._server.is_running
