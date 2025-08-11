@@ -157,15 +157,19 @@ class DTSU666RegisterSensor(SensorEntity):
         if "voltage" in self._register_name:
             self._attr_device_class = SensorDeviceClass.VOLTAGE
             self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "current" in self._register_name:
             self._attr_device_class = SensorDeviceClass.CURRENT
             self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "power" in self._register_name and "reactive" not in self._register_name:
             self._attr_device_class = SensorDeviceClass.POWER
             self._attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "reactive_power" in self._register_name:
             self._attr_device_class = SensorDeviceClass.REACTIVE_POWER
             self._attr_native_unit_of_measurement = "kVAr"
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "energy" in self._register_name:
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
@@ -173,14 +177,13 @@ class DTSU666RegisterSensor(SensorEntity):
         elif "frequency" in self._register_name:
             self._attr_device_class = SensorDeviceClass.FREQUENCY
             self._attr_native_unit_of_measurement = UnitOfFrequency.HERTZ
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         elif "power_factor" in self._register_name:
             self._attr_device_class = SensorDeviceClass.POWER_FACTOR
             self._attr_native_unit_of_measurement = None
+            self._attr_state_class = SensorStateClass.MEASUREMENT
         else:
             self._attr_native_unit_of_measurement = unit
-        
-        # Set state class for numeric sensors
-        if self._attr_state_class is None and "energy" not in self._register_name:
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
